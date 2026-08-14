@@ -17,12 +17,48 @@ import { newsletterRouter } from "./routes/newsletterRoutes.js"
 
 const app = express()
 
+const DEFAULT_ALLOWED_ORIGINS = [
+  "http://localhost:5173",
+  "http://localhost:5174",
+  "https://hiba-welfare-society-web-42eg.vercel.app",
+  "https://hiba-welfare-society-web.vercel.app",
+]
+
+function allowedOrigins(): string[] {
+  const fromEnv = (process.env.CORS_ORIGIN ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+  const frontend = process.env.FRONTEND_URL?.trim()
+  return [...new Set([...DEFAULT_ALLOWED_ORIGINS, ...fromEnv, ...(frontend ? [frontend] : [])])]
+}
+
+function isAllowedOrigin(origin: string | undefined): boolean {
+  if (!origin) return true
+  if (allowedOrigins().includes(origin)) return true
+  try {
+    const { hostname } = new URL(origin)
+    return hostname.endsWith(".vercel.app") && hostname.includes("hiba-welfare-society")
+  } catch {
+    return false
+  }
+}
+
 app.use(
   cors({
-    origin: process.env.CORS_ORIGIN?.split(",").map((s) => s.trim()) ?? true,
-    credentials: true,
+    origin(origin, callback) {
+      if (isAllowedOrigin(origin)) {
+        callback(null, origin ?? true)
+        return
+      }
+      callback(null, false)
+    },
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "x-admin-secret"],
+    optionsSuccessStatus: 204,
   }),
 )
+app.options("*", cors())
 app.use(express.json({ limit: "256kb" }))
 
 app.use("/api/auth", authRouter)
