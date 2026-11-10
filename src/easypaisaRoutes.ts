@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from "express"
+import { verifyDonorToken } from "./middleware/auth.js"
 import {
   paymentFindByOrderRef,
   paymentInsertOne,
@@ -34,10 +35,25 @@ easypaisaRouter.post("/create-donation", async (req: Request, res: Response) => 
 
     const orderRef = `DON-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
     let donorName = ""
-    if (body.donor && typeof body.donor === "object" && body.donor !== null && "name" in body.donor) {
-      donorName = String((body.donor as { name?: string }).name ?? "")
+    let donorEmail = ""
+    let donorId = ""
+    if (body.donor && typeof body.donor === "object" && body.donor !== null) {
+      const donor = body.donor as { name?: unknown; email?: unknown }
+      if (typeof donor.name === "string") donorName = donor.name
+      if (typeof donor.email === "string") donorEmail = donor.email.trim().toLowerCase()
     } else if (typeof body.donorName === "string") {
       donorName = body.donorName
+    }
+
+    const authHeader = req.headers.authorization
+    const rawToken =
+      typeof authHeader === "string" && authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : ""
+    if (rawToken) {
+      try {
+        donorId = verifyDonorToken(rawToken).donorId
+      } catch {
+        donorId = ""
+      }
     }
 
     await paymentInsertOne({
@@ -46,6 +62,8 @@ easypaisaRouter.post("/create-donation", async (req: Request, res: Response) => 
       amountPkr: totalPayable,
       currency: "PKR",
       donorName: donorName || undefined,
+      donorEmail: donorEmail || undefined,
+      donorId: donorId || undefined,
       donationMeta: body,
       gateway: "faysal_bank",
       bankDetails: FAYSAL_BANK_DETAILS,
@@ -164,7 +182,12 @@ easypaisaRouter.get("/verify-donation/:orderRef", async (req: Request, res: Resp
         ok: true,
         status: "failed",
         orderRef,
-        detail: typeof existing.adminNote === "string" ? existing.adminNote : "Transfer could not be verified",
+        detail:
+          typeof existing.rejectionReason === "string"
+            ? existing.rejectionReason
+            : typeof existing.adminNote === "string"
+              ? existing.adminNote
+              : "Transfer could not be verified",
       })
       return
     }

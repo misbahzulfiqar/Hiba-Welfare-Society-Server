@@ -1,6 +1,8 @@
 import "dotenv/config"
+import path from "node:path"
 import cors from "cors"
 import express from "express"
+import { uploadDir } from "./imageUploads.js"
 import {
   contactCollectionName,
   dbName,
@@ -8,12 +10,16 @@ import {
   newsletterCollectionName,
   paymentCollectionName,
 } from "./collections.js"
-import { getMongoClient, getPaymentCollection, isMongoConfigured } from "./db.js"
+import { getMongoClient, getPaymentCollection } from "./db.js"
 import { easypaisaRouter } from "./easypaisaRoutes.js"
 import { adminPaymentRouter } from "./routes/adminPaymentRoutes.js"
 import { authRouter } from "./routes/authRoutes.js"
 import { contactRouter } from "./routes/contactRoutes.js"
 import { newsletterRouter } from "./routes/newsletterRoutes.js"
+import { publicAboutPagesRouter } from "./routes/aboutPagesRoutes.js"
+import { publicHomepageRouter } from "./routes/homepageRoutes.js"
+import { publicSiteContentRouter } from "./routes/siteContentRoutes.js"
+import { publicQuotesRouter } from "./routes/quoteRoutes.js"
 
 const app = express()
 
@@ -60,10 +66,22 @@ app.use(
 )
 app.options("*", cors())
 app.use(express.json({ limit: "256kb" }))
+app.use(
+  "/api/uploads",
+  express.static(path.resolve(uploadDir), {
+    fallthrough: false,
+    index: false,
+    dotfiles: "deny",
+  }),
+)
 
 app.use("/api/auth", authRouter)
 app.use("/api/contact", contactRouter)
 app.use("/api/newsletter", newsletterRouter)
+app.use("/api/quotes", publicQuotesRouter)
+app.use("/api/homepage", publicHomepageRouter)
+app.use("/api/about-pages", publicAboutPagesRouter)
+app.use("/api/site-content", publicSiteContentRouter)
 app.use("/api/admin", adminPaymentRouter)
 app.use("/api", easypaisaRouter)
 
@@ -149,7 +167,7 @@ app.post("/api/payments", async (req, res) => {
 })
 
 export async function ensureIndexes() {
-  if (!isMongoConfigured()) return
+  if (!process.env.MONGODB_URI?.trim()) return
   try {
     const client = await getMongoClient()
     const d = client.db(dbName())
@@ -157,7 +175,8 @@ export async function ensureIndexes() {
     await d.collection(newsletterCollectionName()).createIndex({ email: 1 }, { unique: true })
     await d.collection(contactCollectionName()).createIndex({ createdAt: -1 })
   } catch (e) {
-    console.warn("[hiba-api] ensureIndexes:", e)
+    const msg = e instanceof Error ? e.message : String(e)
+    console.warn(`[hiba-api] MongoDB not reachable (${msg.split("\n")[0]}). Donations will use memory until DNS/Atlas is available.`)
   }
 }
 

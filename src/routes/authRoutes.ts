@@ -2,6 +2,8 @@ import bcrypt from "bcrypt"
 import { Router, type Request, type Response } from "express"
 import { ObjectId } from "mongodb"
 import { getDonorsCollection } from "../db.js"
+import { serializeDonation } from "../donationSerialize.js"
+import { paymentListForDonor } from "../paymentPersistence.js"
 import { authRequired, signDonorToken } from "../middleware/auth.js"
 
 const router = Router()
@@ -211,6 +213,33 @@ router.patch("/me", authRequired, async (req: Request, res: Response) => {
   } catch (e) {
     console.error(e)
     res.status(500).json({ ok: false, error: e instanceof Error ? e.message : "Update failed" })
+  }
+})
+
+router.get("/donations", authRequired, async (req: Request, res: Response) => {
+  try {
+    const id = req.donorId
+    if (!id || !ObjectId.isValid(id)) {
+      res.status(401).json({ ok: false, error: "Invalid session" })
+      return
+    }
+
+    const col = await getDonorsCollection()
+    const doc = await col.findOne({ _id: new ObjectId(id) }, { projection: { passwordHash: 0 } })
+    if (!doc) {
+      res.status(404).json({ ok: false, error: "Account not found" })
+      return
+    }
+
+    const email = typeof doc.email === "string" ? doc.email.trim().toLowerCase() : ""
+    const rows = await paymentListForDonor({ donorId: id, email })
+    res.json({
+      ok: true,
+      donations: rows.map((d) => serializeDonation(d as Record<string, unknown>, "donor")),
+    })
+  } catch (e) {
+    console.error(e)
+    res.status(500).json({ ok: false, error: e instanceof Error ? e.message : "Failed to load donations" })
   }
 })
 
