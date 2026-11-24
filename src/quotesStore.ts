@@ -1,6 +1,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { readStoredDocument, writeStoredDocument } from "./contentDocuments.js"
+import { isMongoConfigured } from "./db.js"
 
 export type StoredQuote = {
   id: string
@@ -41,6 +43,17 @@ function normalizeQuotes(value: unknown): StoredQuote[] {
 
 export async function readQuotes(): Promise<StoredQuote[]> {
   try {
+    if (isMongoConfigured()) {
+      const stored = await readStoredDocument("quotes")
+      if (stored != null) {
+        const quotes = normalizeQuotes(stored)
+        return quotes.length > 0 ? quotes : DEFAULT_QUOTES
+      }
+    }
+  } catch {
+    // Fall through to the local file, then the built-in defaults.
+  }
+  try {
     const raw = await readFile(dataFile, "utf8")
     const parsed = JSON.parse(raw) as unknown
     const quotes = normalizeQuotes(parsed)
@@ -53,6 +66,10 @@ export async function readQuotes(): Promise<StoredQuote[]> {
 export async function writeQuotes(value: unknown): Promise<StoredQuote[]> {
   const quotes = normalizeQuotes(value)
   const next = quotes.length > 0 ? quotes : DEFAULT_QUOTES
+  if (isMongoConfigured()) {
+    await writeStoredDocument("quotes", next)
+    return next
+  }
   await mkdir(dataDir, { recursive: true })
   await writeFile(dataFile, JSON.stringify(next, null, 2), "utf8")
   return next

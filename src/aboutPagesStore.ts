@@ -1,6 +1,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { readStoredDocument, writeStoredDocument } from "./contentDocuments.js"
+import { isMongoConfigured } from "./db.js"
 
 export type AboutPageKey =
   | "chairman"
@@ -209,6 +211,14 @@ function normalize(value: unknown): AboutPagesSettings {
 
 export async function readAboutPages(): Promise<AboutPagesSettings> {
   try {
+    if (isMongoConfigured()) {
+      const stored = await readStoredDocument("about-pages")
+      if (stored != null) return normalize(stored)
+    }
+  } catch {
+    // Fall through to the local file, then the built-in defaults.
+  }
+  try {
     const raw = await readFile(dataFile, "utf8")
     return normalize(JSON.parse(raw))
   } catch {
@@ -218,6 +228,10 @@ export async function readAboutPages(): Promise<AboutPagesSettings> {
 
 export async function writeAboutPages(value: unknown): Promise<AboutPagesSettings> {
   const next = normalize(value)
+  if (isMongoConfigured()) {
+    await writeStoredDocument("about-pages", next)
+    return next
+  }
   await mkdir(dataDir, { recursive: true })
   await writeFile(dataFile, JSON.stringify(next, null, 2), "utf8")
   return next

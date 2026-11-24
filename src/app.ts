@@ -2,7 +2,7 @@ import "dotenv/config"
 import path from "node:path"
 import cors from "cors"
 import express from "express"
-import { uploadDir } from "./imageUploads.js"
+import { readInitiativeImage, uploadDir } from "./imageUploads.js"
 import {
   contactCollectionName,
   dbName,
@@ -66,6 +66,20 @@ app.use(
 )
 app.options("*", cors())
 app.use(express.json({ limit: "256kb" }))
+app.get("/api/uploads/:filename", async (req, res, next) => {
+  try {
+    const image = await readInitiativeImage(req.params.filename)
+    if (!image) {
+      next()
+      return
+    }
+    res.setHeader("Content-Type", image.contentType)
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable")
+    res.send(image.data)
+  } catch (error) {
+    next(error)
+  }
+})
 app.use(
   "/api/uploads",
   express.static(path.resolve(uploadDir), {

@@ -1,6 +1,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { readStoredDocument, writeStoredDocument } from "./contentDocuments.js"
+import { isMongoConfigured } from "./db.js"
 
 export type ServiceMenuItem = { id: string; label: string; visible: boolean }
 export type ServiceMenuSection = { id: string; title: string; visible: boolean; items: ServiceMenuItem[] }
@@ -390,6 +392,14 @@ function normalize(value: unknown): SiteContent {
 
 export async function readSiteContent(): Promise<{ content: SiteContent; stored: boolean }> {
   try {
+    if (isMongoConfigured()) {
+      const stored = await readStoredDocument("site-content")
+      if (stored != null) return { content: normalize(stored), stored: true }
+    }
+  } catch {
+    // Fall through to the local file, then the built-in defaults.
+  }
+  try {
     const raw = await readFile(dataFile, "utf8")
     return { content: normalize(JSON.parse(raw)), stored: true }
   } catch {
@@ -399,6 +409,10 @@ export async function readSiteContent(): Promise<{ content: SiteContent; stored:
 
 export async function writeSiteContent(value: unknown): Promise<SiteContent> {
   const content = normalize(value)
+  if (isMongoConfigured()) {
+    await writeStoredDocument("site-content", content)
+    return content
+  }
   await mkdir(dataDir, { recursive: true })
   await writeFile(dataFile, JSON.stringify(content, null, 2), "utf8")
   return content

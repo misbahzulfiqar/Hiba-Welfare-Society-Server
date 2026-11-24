@@ -1,6 +1,8 @@
 import { mkdir, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { readStoredUpload, writeStoredUpload } from "./contentDocuments.js"
+import { isMongoConfigured } from "./db.js"
 
 export const UPLOAD_CARD_IDS = [
   "fitra",
@@ -68,7 +70,16 @@ export async function saveInitiativeImage(cardId: string, bytes: Buffer): Promis
   const kind = imageKind(bytes)
   if (!kind) throw new UploadError(400, "Choose a JPEG, PNG, WEBP, or GIF image")
   const filename = `${cardId}-${Date.now()}.${kind}`
+  const contentType = kind === "jpg" ? "image/jpeg" : `image/${kind}`
+  if (isMongoConfigured()) {
+    await writeStoredUpload(filename, contentType, bytes)
+    return `/api/uploads/${filename}`
+  }
   await mkdir(uploadDir, { recursive: true })
   await writeFile(path.join(uploadDir, filename), bytes)
   return `/api/uploads/${filename}`
+}
+
+export async function readInitiativeImage(filename: string): Promise<{ contentType: string; data: Buffer } | null> {
+  return readStoredUpload(filename)
 }

@@ -1,6 +1,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { readStoredDocument, writeStoredDocument } from "./contentDocuments.js"
+import { isMongoConfigured } from "./db.js"
 import { DEFAULT_CONTENT, normalizeContentSections, type ContentSections } from "./homepageContent.js"
 
 export type InitiativeCard = {
@@ -380,6 +382,14 @@ function normalize(value: unknown): HomepageSettings {
 
 export async function readHomepage(): Promise<HomepageSettings> {
   try {
+    if (isMongoConfigured()) {
+      const stored = await readStoredDocument("homepage")
+      if (stored != null) return normalize(stored)
+    }
+  } catch {
+    // Fall through to the local file, then the built-in defaults.
+  }
+  try {
     const raw = await readFile(dataFile, "utf8")
     return normalize(JSON.parse(raw))
   } catch {
@@ -389,6 +399,10 @@ export async function readHomepage(): Promise<HomepageSettings> {
 
 export async function writeHomepage(value: unknown): Promise<HomepageSettings> {
   const next = normalize(value)
+  if (isMongoConfigured()) {
+    await writeStoredDocument("homepage", next)
+    return next
+  }
   await mkdir(dataDir, { recursive: true })
   await writeFile(dataFile, JSON.stringify(next, null, 2), "utf8")
   return next
